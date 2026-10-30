@@ -1,37 +1,42 @@
 {
-  "name": "mnema",
-  "version": "0.1.0",
-  "private": true,
-  "description": "仿人类记忆引擎：个体记忆、关系感知、遗忘与唤醒。为长期运行的 AI 提供会记事、会忘事、会想起的记忆层。",
-  "type": "module",
-  "license": "MIT",
-  "keywords": [
-    "memory",
-    "ai",
-    "llm",
-    "agent",
-    "engram",
-    "consolidation",
-    "forgetting",
-    "retrieval",
-    "episodic",
-    "semantic",
-    "biomimetic"
-  ],
-  "engines": {
-    "node": ">=22"
-  },
-  "files": [
-    "src",
-    "docs",
-    "README.md",
-    "LICENSE"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/zhuhaob0/mnema.git"
-  },
-  "scripts": {
-    "test": "node --test"
-  }
+    "name":  "mnema",
+    "version":  "0.1.0",
+    "private":  true,
+    "description":  "仿人类记忆引擎：个体记忆、关系感知、遗忘与唤醒。为长期运行的 AI 提供会记事、会忘事、会想起的记忆层。",
+    "type":  "module",
+    "license":  "MIT",
+    "keywords":  [
+                     "memory",
+                     "ai",
+                     "llm",
+                     "agent",
+                     "engram",
+                     "consolidation",
+                     "forgetting",
+                     "retrieval",
+                     "episodic",
+                     "semantic",
+                     "biomimetic"
+                 ],
+    "engines":  {
+                    "node":  "\u003e=22"
+                },
+    "files":  [
+                  "src",
+                  "docs",
+                  "README.md",
+                  "LICENSE"
+              ],
+    "repository":  {
+                       "type":  "git",
+                       "url":  "git+https://github.com/zhuhaob0/mnema.git"
+                   },
+    "scripts":  {
+                    "start":  "node src/cli.js serve",
+                    "test":  "node --test",
+                    "stats":  "node src/cli.js stats"
+                },
+    "bin":  {
+                "mnema":  "./src/cli.js"
+            }
 }

@@ -39,9 +39,40 @@
 - **[接入规范](docs/ADAPTERS.md)** — 怎么把任意应用接进来：事件、检索、扩展点
 - **[路线图](docs/ROADMAP.md)** — 分期与后续集成
 
+## 快速开始
+
+```bash
+# 启动服务（默认 127.0.0.1:8321，SQLite 在 ./data/mnema.db）
+node src/cli.js serve
+
+# 看统计
+node src/cli.js stats
+
+# 跑测试
+node --test
+```
+
+写入一轮对话：
+
+```bash
+curl -X POST http://127.0.0.1:8321/v1/events -H 'content-type: application/json' -d '{
+  "channel": { "id": "chat:user:1", "kind": "direct", "participants": ["self", "user:1"] },
+  "events": [{ "role": "user", "text": "今天在楼下捡到一只小猫，带它去看了医生" }]
+}'
+```
+
+唤醒时检索：
+
+```bash
+curl -X POST http://127.0.0.1:8321/v1/recall -H 'content-type: application/json' -d '{
+  "channelId": "chat:user:1", "participants": ["self", "user:1"], "query": "小猫"
+}'
+```
+
 ## 状态
 
-📍 **设计中（v0.1）** — 尚未有可运行代码。
+🚧 **P1 完成**（核心骨架）：事件写入 / 关系度 / 门控 / 向量检索 / HTTP API / 41 个单测。
+待做：P2 夜间巩固、P3 叙事、P4 再巩固与 MCP。
 
 ## License
 

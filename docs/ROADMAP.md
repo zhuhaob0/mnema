@@ -14,17 +14,17 @@
 
 ---
 
-## P1 交付清单
+## P1 交付清单（✅ 已完成）
 
-- [ ] SQLite schema + 迁移器
-- [ ] `Event` 写入路径（门控 → 编码 → 索引）
-- [ ] 关系度计算（六信号 + 滑动平均）
-- [ ] 关系等级 → 内容矩阵门控
-- [ ] EmbeddingProvider（本地 ONNX + 降级）
-- [ ] `/v1/events` `/v1/recall` `/v1/relationships` `/v1/health`
-- [ ] 召回：人物/时间/语义/情绪 四路 + 融合打分
-- [ ] 渲染（`rendered` 文本）
-- [ ] 单元测试：门控矩阵、衰减、打分
+- [x] SQLite schema + 迁移器（v4：events/facts/relationships/channels/persona/narrative/versions/interactions）
+- [x] `Event` 写入路径（门控 → 编码 → 索引）
+- [x] 关系度计算（六信号 + 滑动平均 + 降温）
+- [x] 关系等级 → 内容矩阵门控（含公共场景四条例外）
+- [x] EmbeddingProvider（http sidecar + hash 降级）
+- [x] `/v1/events` `/v1/recall` `/v1/relationships` `/v1/health` `/v1/persona` `/v1/narrative` `/v1/stats`
+- [x] 召回：人物/时间/语义/情绪 四路 + 融合打分
+- [x] 渲染（`rendered` 文本）
+- [x] 单元测试：41 个（门控矩阵、关系度、衰减、检索、HTTP、DB 迁移）
 
 ## P2 交付清单
 
