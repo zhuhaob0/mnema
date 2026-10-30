@@ -353,3 +353,34 @@ POST /v1/consolidate
 
 引擎内部有 `disclosureFor(memory, audience, tenant)`；
 HTTP 侧暂未暴露独立端点（可以在 recall 的 item.disclosure 里拿到同样的判定）。
+
+---
+
+## 12. 叙事接口（P3）
+
+### 12.1 读取
+
+```http
+GET /v1/narrative?tenant=default
+```
+
+```json
+{ "ok": true, "narrative": { "markdown": "# 我的状态（2026-10-30 更新）\n...", "updatedAt": "..." } }
+```
+
+只读。没生成过时返回 `{ "narrative": null }`。
+
+### 12.2 触发重写
+
+```http
+POST /v1/narrative   { "tenant": "default" }
+```
+
+返回新生成的 markdown 与时间。**内容由引擎写，不接受外部传入的正文**——
+这是"叙事不可编辑"的接口级保证。
+
+### 12.3 适配器怎么用
+
+- 唤醒时：`recall` 的 `rendered` 已包含叙事，通常不用单独取
+- 需要展示"它最近的状态"：直接读 `/v1/narrative`
+- 想让它"立刻整理一下心情"：调 `POST /v1/narrative`

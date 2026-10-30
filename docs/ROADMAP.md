@@ -35,12 +35,12 @@
 - [x] 幂等水位（lastConsolidatedAt）
 - [x] 测试：聚类/合并阈值/衰减/沉底/水位幂等 + 披露策略 11 条
 
-## P3 交付清单
+## P3 交付清单（✅ 已完成）
 
-- [ ] 叙事生成提示词（自传体口吻）
-- [ ] 每天巩固时重写
-- [ ] `/v1/narrative`（只读）
-- [ ] 叙事注入 recall 的 rendered（放在最前）
+- [x] 叙事生成器（规则版，自传体口吻；LLM 版可插拔）
+- [x] 每天巩固时重写（`/v1/narrative` 与 `mnema narrative` 可单独触发）
+- [x] `/v1/narrative`（GET 只读 / POST 触发重写）
+- [x] 叙事注入 recall 的 rendered（排在记忆之前）
 
 ## P4 交付清单
 

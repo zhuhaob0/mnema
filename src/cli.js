@@ -51,6 +51,13 @@ if (command === 'stats') {
   process.exit(0);
 }
 
+if (command === 'narrative') {
+  const result = engine.regenerateNarrative();
+  console.log(result.markdown);
+  engine.close();
+  process.exit(0);
+}
+
 if (command === 'consolidate') {
   const result = await engine.consolidate();
   console.log(JSON.stringify(result, null, 2));

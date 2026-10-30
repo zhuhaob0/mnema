@@ -14,8 +14,11 @@ import {
 import { rankMemories, renderMemories } from './core/recall.js';
 import { computeDisclosure } from './core/disclosure.js';
 import { clusterBySimilarity, decayWeight, extractFactText, HALF_LIFE, mergeDecision } from './core/consolidate.js';
+import { generateNarrative } from './core/narrative.js';
 import { cosine } from './util/misc.js';
 import { newId, nowIso } from './util/misc.js';
+
+const logSafe = (msg) => { try { console.error(String(msg)); } catch { /* 忽略 */ } };
 
 export function createEngine(options = {}) {
   const config = normalizeConfig(options.config ?? {});
@@ -356,6 +359,31 @@ export function createEngine(options = {}) {
     const finishedAt = new Date(now).toISOString();
     store.setTenantState(db, tenant, { lastConsolidatedAt: finishedAt });
 
+    // 叙事自我：像睡醒后整理"我最近过得怎么样"
+    let narrativeUpdated = false;
+    if (config.narrative?.enabled !== false) {
+      try {
+        const allEvents = store.listEvents(db, { tenant, limit: config.narrative?.maxEvents ?? 40 });
+        const allFacts = store.listFacts(db, { tenant, limit: 200 });
+        const rels = store.listRelationships(db, tenant);
+        const persona = store.getPersona(db, tenant)?.markdown ?? '';
+        const markdown = generateNarrative({
+          events: allEvents,
+          facts: allFacts,
+          relationships: rels,
+          persona,
+          now,
+          maxEvents: config.narrative?.maxEvents ?? 40,
+          maxContacts: config.narrative?.maxContacts ?? 5,
+        });
+        store.setNarrative(db, tenant, markdown, finishedAt);
+        store.setTenantState(db, tenant, { lastNarrativeAt: finishedAt });
+        narrativeUpdated = true;
+      } catch (error) {
+        logSafe(`[narrative] 生成失败：${error?.message ?? error}`);
+      }
+    }
+
     return {
       ok: true,
       tenant,
@@ -365,8 +393,26 @@ export function createEngine(options = {}) {
       factsMerged,
       factsSimilar,
       decayed,
+      narrativeUpdated,
       finishedAt,
     };
+  }
+
+  /** 单独重写叙事（调试/手动） */
+  function regenerateNarrative({ tenant = config.tenant, now = clock() } = {}) {
+    const markdown = generateNarrative({
+      events: store.listEvents(db, { tenant, limit: config.narrative?.maxEvents ?? 40 }),
+      facts: store.listFacts(db, { tenant, limit: 200 }),
+      relationships: store.listRelationships(db, tenant),
+      persona: store.getPersona(db, tenant)?.markdown ?? '',
+      now,
+      maxEvents: config.narrative?.maxEvents ?? 40,
+      maxContacts: config.narrative?.maxContacts ?? 5,
+    });
+    const at = new Date(now).toISOString();
+    store.setNarrative(db, tenant, markdown, at);
+    store.setTenantState(db, tenant, { lastNarrativeAt: at });
+    return { markdown, updatedAt: at };
   }
 
   return {
@@ -377,6 +423,7 @@ export function createEngine(options = {}) {
     ingest,
     recall,
     consolidate,
+    regenerateNarrative,
     refreshRelationship: (contactId, opts) => refreshRelationship(config.tenant, contactId, opts),
     relationships: (tenant = config.tenant) => store.listRelationships(db, tenant),
     relationship: (contactId, tenant = config.tenant) => store.getRelationship(db, tenant, contactId),

@@ -147,6 +147,13 @@ export function createHttpServer(engine, { token = engine.config.http.token } = 
         return;
       }
 
+      if (path === '/v1/narrative' && req.method === 'POST') {
+        const body = await readJson(req);
+        const narrative = engine.regenerateNarrative({ tenant: body.tenant ?? undefined });
+        sendJson(res, 200, { ok: true, narrative });
+        return;
+      }
+
       if (path === '/v1/narrative' && req.method === 'GET') {
         sendJson(res, 200, { ok: true, narrative: engine.narrative(url.searchParams.get('tenant') ?? undefined) });
         return;
