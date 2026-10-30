@@ -65,7 +65,7 @@ function extractFacts(text, contentClass) {
  * @param {string} input.contactId
  * @returns {object} 编码结果（未过门控）
  */
-export function encodeHeuristic({ text, channelKind = 'direct', tier = 'L0', contactId, flags = {} }) {
+export function encodeHeuristic({ text, channelKind = 'direct', tier = 'L0', contactId, role = 'user', flags = {} }) {
   const raw = String(text ?? '').trim();
   if (!raw) {
     return { worth: false, reason: '空消息', contentClass: 'event', salience: 0 };
@@ -107,6 +107,8 @@ export function encodeHeuristic({ text, channelKind = 'direct', tier = 'L0', con
     tags: extractTags(raw),
     facts: extractFacts(raw, contentClass),
     flags: { aboutSelf: isSelf, aboutOwner: isOwner, collective: isCollective },
+    // 记忆"关于谁"：披露层用它判断是否涉及第三方（不在场的第三人）
+    subject: role === 'assistant' ? ['self'] : [contactId].filter(Boolean),
     relationSignals: {
       depth: Math.min(1, raw.length / 80),
       emotion: emotion !== 'neutral' ? 0.6 : 0.2,

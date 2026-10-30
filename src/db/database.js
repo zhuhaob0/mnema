@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 const MIGRATIONS = [
   // v1 → 事件索引（L1）
@@ -116,6 +116,17 @@ const MIGRATIONS = [
     emotion TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_interactions_contact ON interactions(tenant, contact_id, at DESC);
+  `,
+  // v5 → 披露策略：记忆"关于谁"（subject）+ 性格参数 + 巩固水位
+  `
+  ALTER TABLE events ADD COLUMN subject TEXT;
+  ALTER TABLE facts ADD COLUMN subject TEXT;
+  ALTER TABLE persona ADD COLUMN traits TEXT;
+  CREATE TABLE IF NOT EXISTS tenant_state (
+    tenant TEXT PRIMARY KEY,
+    last_consolidated_at TEXT,
+    last_narrative_at TEXT
+  );
   `,
 ];
 

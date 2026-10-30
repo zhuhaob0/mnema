@@ -23,6 +23,7 @@ function rowToEvent(row) {
     channelId: row.channel_id,
     channelKind: row.channel_kind,
     participants: parseJson(row.participants, []),
+    subject: parseJson(row.subject, []),
     relationshipTier: row.relationship_tier,
     scene: row.scene,
     gist: row.gist,
@@ -47,6 +48,7 @@ function rowToFact(row) {
     tenant: row.tenant,
     text: row.text,
     participants: parseJson(row.participants, []),
+    subject: parseJson(row.subject, []),
     sensitivity: row.sensitivity,
     contentClass: row.content_class,
     firstAt: row.first_at,
@@ -63,11 +65,12 @@ function rowToFact(row) {
 // ── events ────────────────────────────────────────────────
 export function insertEvent(db, ev) {
   db.prepare(`INSERT INTO events (
-      id, tenant, at, channel_id, channel_kind, participants, relationship_tier,
+      id, tenant, at, channel_id, channel_kind, participants, subject, relationship_tier,
       scene, gist, emotion, salience, sensitivity, content_class, tags, pointer,
       access_count, last_access, weight, embedding, created_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
     ev.id, ev.tenant, ev.at, ev.channelId, ev.channelKind, toJson(ev.participants),
+    toJson(ev.subject ?? ev.participants ?? []),
     ev.relationshipTier ?? null, ev.scene ?? null, ev.gist ?? '', ev.emotion ?? null,
     ev.salience ?? 0, ev.sensitivity ?? 'channel', ev.contentClass ?? 'event',
     toJson(ev.tags ?? []), ev.pointer ?? null, 0, null,
@@ -109,12 +112,14 @@ export function updateEventWeight(db, id, weight) {
 // ── facts ─────────────────────────────────────────────────
 export function insertFact(db, fact) {
   db.prepare(`INSERT INTO facts (
-      id, tenant, text, participants, sensitivity, content_class, first_at,
+      id, tenant, text, participants, subject, sensitivity, content_class, first_at,
       last_confirmed_at, sources, confidence, weight, embedding, superseded_by, created_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
-    fact.id, fact.tenant, fact.text, toJson(fact.participants), fact.sensitivity,
-    fact.contentClass ?? 'event', fact.firstAt, fact.lastConfirmedAt ?? fact.firstAt,
-    toJson(fact.sources ?? []), fact.confidence ?? 0.8, fact.weight ?? 0.8,
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+    fact.id, fact.tenant, fact.text, toJson(fact.participants),
+    toJson(fact.subject ?? fact.participants ?? []),
+    fact.sensitivity, fact.contentClass ?? 'event', fact.firstAt,
+    fact.lastConfirmedAt ?? fact.firstAt, toJson(fact.sources ?? []),
+    fact.confidence ?? 0.8, fact.weight ?? 0.8,
     vectorToBuffer(fact.embedding), fact.supersededBy ?? null, fact.createdAt ?? fact.firstAt,
   );
   return fact.id;
@@ -127,10 +132,28 @@ export function listFacts(db, { tenant, limit = 500 } = {}) {
     .map(rowToFact);
 }
 
-export function markFactAccessed(db, id, when) {
+export function getFact(db, id) {
+  return rowToFact(db.prepare('SELECT * FROM facts WHERE id = ?').get(id));
+}
+
+export function updateFact(db, id, patch = {}) {
+  const current = getFact(db, id);
+  if (!current) return null;
+  const next = { ...current, ...patch };
+  db.prepare(`UPDATE facts SET text = ?, last_confirmed_at = ?, sources = ?, weight = ?,
+      confidence = ?, embedding = ?, superseded_by = ? WHERE id = ?`).run(
+    next.text, next.lastConfirmedAt, toJson(next.sources ?? []), next.weight,
+    next.confidence ?? 0.8, vectorToBuffer(next.embedding), next.supersededBy ?? null, id,
+  );
+  return getFact(db, id);
+}
+
+export function deleteFact(db, id) {
+  db.prepare('DELETE FROM facts WHERE id = ?').run(id);
+}
+
+export function markFactAccessed(db, id) {
   db.prepare('UPDATE facts SET weight = MIN(1, weight + 0.02) WHERE id = ?').run(id);
-  db.prepare('UPDATE facts SET last_confirmed_at = last_confirmed_at WHERE id = ?').run(id);
-  void when;
 }
 
 // ── relationships ─────────────────────────────────────────
@@ -198,13 +221,16 @@ export function getChannel(db, tenant, channelId) {
 // ── persona / narrative ───────────────────────────────────
 export function getPersona(db, tenant) {
   const row = db.prepare('SELECT * FROM persona WHERE tenant = ?').get(tenant);
-  return row ? { markdown: row.markdown, updatedAt: row.updated_at } : null;
+  return row
+    ? { markdown: row.markdown, traits: parseJson(row.traits, {}), updatedAt: row.updated_at }
+    : null;
 }
 
-export function setPersona(db, tenant, markdown, when) {
-  db.prepare(`INSERT INTO persona (tenant, markdown, updated_at) VALUES (?,?,?)
-    ON CONFLICT(tenant) DO UPDATE SET markdown = excluded.markdown, updated_at = excluded.updated_at`)
-    .run(tenant, markdown, when);
+export function setPersona(db, tenant, markdown, when, traits = {}) {
+  db.prepare(`INSERT INTO persona (tenant, markdown, traits, updated_at) VALUES (?,?,?,?)
+    ON CONFLICT(tenant) DO UPDATE SET markdown = excluded.markdown,
+      traits = excluded.traits, updated_at = excluded.updated_at`)
+    .run(tenant, markdown, toJson(traits), when);
 }
 
 export function getNarrative(db, tenant) {
@@ -218,7 +244,28 @@ export function setNarrative(db, tenant, markdown, when) {
     .run(tenant, markdown, when);
 }
 
-// ── versions / stats ──────────────────────────────────────
+// ── tenant state（巩固水位） ──────────────────────────────
+export function getTenantState(db, tenant) {
+  const row = db.prepare('SELECT * FROM tenant_state WHERE tenant = ?').get(tenant);
+  return {
+    lastConsolidatedAt: row?.last_consolidated_at ?? null,
+    lastNarrativeAt: row?.last_narrative_at ?? null,
+  };
+}
+
+export function setTenantState(db, tenant, patch = {}) {
+  const current = getTenantState(db, tenant);
+  const next = { ...current, ...patch };
+  db.prepare(`INSERT INTO tenant_state (tenant, last_consolidated_at, last_narrative_at)
+    VALUES (?,?,?)
+    ON CONFLICT(tenant) DO UPDATE SET
+      last_consolidated_at = excluded.last_consolidated_at,
+      last_narrative_at = excluded.last_narrative_at`)
+    .run(tenant, next.lastConsolidatedAt ?? null, next.lastNarrativeAt ?? null);
+  return next;
+}
+
+// ── versions ──────────────────────────────────────────────
 export function addVersion(db, { tenant, memoryId, kind, text, at }) {
   db.prepare('INSERT INTO memory_versions (tenant, memory_id, kind, text, at) VALUES (?,?,?,?,?)')
     .run(tenant, memoryId, kind, text, at);
@@ -228,17 +275,6 @@ export function listVersions(db, tenant, memoryId) {
   return db
     .prepare('SELECT * FROM memory_versions WHERE tenant = ? AND memory_id = ? ORDER BY at DESC')
     .all(tenant, memoryId);
-}
-
-export function stats(db, tenant) {
-  const one = (sql) => db.prepare(sql).get(tenant)?.n ?? 0;
-  return {
-    events: one('SELECT COUNT(*) AS n FROM events WHERE tenant = ?'),
-    facts: one('SELECT COUNT(*) AS n FROM facts WHERE tenant = ?'),
-    relationships: one('SELECT COUNT(*) AS n FROM relationships WHERE tenant = ?'),
-    channels: one('SELECT COUNT(*) AS n FROM channels WHERE tenant = ?'),
-    versions: one('SELECT COUNT(*) AS n FROM memory_versions WHERE tenant = ?'),
-  };
 }
 
 // ── interactions（未门控的交互流，关系度用） ─────────────
@@ -256,7 +292,41 @@ export function listInteractions(db, { tenant, contactId, limit = 2000 } = {}) {
 
 export function countMemoriesForContact(db, tenant, contactId) {
   const row = db
-    .prepare("SELECT COUNT(*) AS n FROM events WHERE tenant = ? AND participants LIKE ?")
+    .prepare('SELECT COUNT(*) AS n FROM events WHERE tenant = ? AND participants LIKE ?')
     .get(tenant, `%"${contactId}"%`);
   return Number(row?.n ?? 0);
+}
+
+// ── stats ─────────────────────────────────────────────────
+export function stats(db, tenant) {
+  const one = (sql) => db.prepare(sql).get(tenant)?.n ?? 0;
+  return {
+    events: one('SELECT COUNT(*) AS n FROM events WHERE tenant = ?'),
+    facts: one('SELECT COUNT(*) AS n FROM facts WHERE tenant = ?'),
+    relationships: one('SELECT COUNT(*) AS n FROM relationships WHERE tenant = ?'),
+    channels: one('SELECT COUNT(*) AS n FROM channels WHERE tenant = ?'),
+    versions: one('SELECT COUNT(*) AS n FROM memory_versions WHERE tenant = ?'),
+    interactions: one('SELECT COUNT(*) AS n FROM interactions WHERE tenant = ?'),
+  };
+}
+
+export function updateFactWeight(db, id, weight) {
+  db.prepare('UPDATE facts SET weight = ? WHERE id = ?').run(weight, id);
+}
+
+export function listEventsSince(db, { tenant, since, limit = 500 } = {}) {
+  if (!since) return listEvents(db, { tenant, limit });
+  return db
+    .prepare('SELECT * FROM events WHERE tenant = ? AND at > ? ORDER BY at ASC LIMIT ?')
+    .all(tenant, since, limit)
+    .map((row) => ({
+      id: row.id, tenant: row.tenant, at: row.at, channelId: row.channel_id,
+      channelKind: row.channel_kind, participants: parseJson(row.participants, []),
+      subject: parseJson(row.subject, []), relationshipTier: row.relationship_tier,
+      scene: row.scene, gist: row.gist, emotion: row.emotion, salience: row.salience,
+      sensitivity: row.sensitivity, contentClass: row.content_class,
+      tags: parseJson(row.tags, []), pointer: row.pointer, accessCount: row.access_count,
+      lastAccess: row.last_access, weight: row.weight,
+      embedding: bufferToVector(row.embedding), createdAt: row.created_at,
+    }));
 }

@@ -87,22 +87,48 @@ export function renderMemories(scored, { maxItems = 10, narrative = null } = {})
     return { items: [], rendered: lines.join('\n') };
   }
   lines.push('【你记得的】');
+  const hints = [];
+  const items = [];
   for (const entry of top) {
+    const level = entry.disclosure?.level ?? 3;
+    if (level <= 0) continue;
+
+    if (level === 1) {
+      hints.push(entry);
+      items.push({
+        id: entry.item.id,
+        kind: entry.item.kind ?? (entry.item.text ? 'semantic' : 'episodic'),
+        text: entry.item.gist ?? entry.item.text ?? '',
+        score: entry.score,
+        at: entry.item.at ?? entry.item.firstAt ?? null,
+        sensitivity: entry.item.sensitivity,
+        disclosure: entry.disclosure,
+        withheld: true,
+        components: entry.components,
+      });
+      continue;
+    }
+
     const text = entry.item.gist ?? entry.item.text ?? '';
     const at = entry.item.at ?? entry.item.firstAt ?? '';
     const when = at ? `（${String(at).slice(0, 10)}）` : '';
-    lines.push(`- ${text}${when}`);
-  }
-  return {
-    items: top.map((entry) => ({
+    const summaryMark = level === 2 ? '（只能概括，不要复述原话）' : '';
+    lines.push(`- ${text}${when}${summaryMark}`);
+    items.push({
       id: entry.item.id,
       kind: entry.item.kind ?? (entry.item.text ? 'semantic' : 'episodic'),
-      text: entry.item.gist ?? entry.item.text ?? '',
+      text,
       score: entry.score,
       at: entry.item.at ?? entry.item.firstAt ?? null,
       sensitivity: entry.item.sensitivity,
+      disclosure: entry.disclosure,
       components: entry.components,
-    })),
-    rendered: lines.join('\n'),
-  };
+    });
+  }
+
+  if (hints.length > 0) {
+    lines.push('', '【你知道但不宜细说的】', '- 有些关于某人的事你记得，但只承认"知道"，不要展开内容与被问者的细节');
+  }
+
+  return { items, rendered: lines.join('\n') };
 }

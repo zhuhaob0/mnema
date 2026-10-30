@@ -12,6 +12,9 @@ import {
   applyDecay, blendScore, deriveSignals, scoreFromSignals, tierFromScore,
 } from './core/relationship.js';
 import { rankMemories, renderMemories } from './core/recall.js';
+import { computeDisclosure } from './core/disclosure.js';
+import { clusterBySimilarity, decayWeight, extractFactText, HALF_LIFE, mergeDecision } from './core/consolidate.js';
+import { cosine } from './util/misc.js';
 import { newId, nowIso } from './util/misc.js';
 
 export function createEngine(options = {}) {
@@ -104,6 +107,7 @@ export function createEngine(options = {}) {
         text,
         channelKind,
         tier,
+        role: raw?.role ?? 'user',
         contactId: participants.find((p) => p !== selfId()) ?? '',
         flags: raw?.flags,
       });
@@ -148,6 +152,7 @@ export function createEngine(options = {}) {
         channelId: channel?.id ?? 'unknown',
         channelKind,
         participants,
+        subject: coded.subject ?? participants,
         relationshipTier: tier,
         scene: coded.scene,
         gist: coded.gist,
@@ -173,6 +178,7 @@ export function createEngine(options = {}) {
           tenant,
           text: factText,
           participants,
+          subject: coded.subject ?? participants,
           sensitivity: coded.sensitivity,
           contentClass: coded.contentClass,
           firstAt: ev.at,
@@ -200,7 +206,9 @@ export function createEngine(options = {}) {
     const cfg = config.recall;
     const events = store.listEvents(db, { tenant, limit: cfg.candidatePool ?? 300 });
     const facts = store.listFacts(db, { tenant, limit: cfg.candidatePool ?? 300 });
-    const items = [...events, ...facts];
+    const floor = Number(config.decay?.floor ?? 0.15);
+    // 沉底（weight 低于阈值）不参与常规检索
+    const items = [...events, ...facts].filter((i) => (i.weight ?? 1) >= floor);
 
     let queryVector = null;
     let preferKeyword = false;
@@ -221,8 +229,21 @@ export function createEngine(options = {}) {
       items, query, queryVector, channelId, participants, relationships: relMap, config: cfg, preferKeyword,
     });
 
+    // 披露：记得 ≠ 该说。按听众/主体/性格算出每条能说多少
+    const traits = store.getPersona(db, tenant)?.traits ?? {};
+    const annotated = scored.map((entry) => ({
+      ...entry,
+      disclosure: computeDisclosure({
+        memory: entry.item,
+        audience: participants,
+        relationships: relMap,
+        traits,
+        config: config.disclosure,
+      }),
+    }));
+
     const narrative = includeNarrative ? store.getNarrative(db, tenant)?.markdown ?? null : null;
-    const { items: top, rendered } = renderMemories(scored, { maxItems: maxItems ?? cfg.maxItems, narrative });
+    const { items: top, rendered } = renderMemories(annotated, { maxItems: maxItems ?? cfg.maxItems, narrative });
 
     const when = nowIso(clock);
     for (const hit of top) {
@@ -237,6 +258,117 @@ export function createEngine(options = {}) {
     };
   }
 
+  /**
+   * 巩固（仿慢波睡眠）：事件聚类 → 抽象事实 → 合并/分离 → 衰减 → 关系重算
+   * @param {{tenant?: string, now?: number}} [options]
+   */
+  async function consolidate({ tenant = config.tenant, now = clock() } = {}) {
+    const floor = Number(config.decay?.floor ?? 0.15);
+    const state = store.getTenantState(db, tenant);
+    const pending = store.listEventsSince(db, { tenant, since: state.lastConsolidatedAt, limit: 500 });
+    const facts = store.listFacts(db, { tenant, limit: 1000 });
+
+    const clusters = clusterBySimilarity(
+      pending.filter((e) => (e.weight ?? 0) >= floor && e.embedding),
+      { threshold: 0.85 },
+    );
+
+    let factsCreated = 0;
+    let factsMerged = 0;
+    let factsSimilar = 0;
+
+    for (const cluster of clusters) {
+      if (cluster.length < 2) continue; // 单条事件不抽象，避免事实库膨胀
+      const text = extractFactText(cluster);
+      if (!text) continue;
+      const [vec] = await embedding.embed([text]);
+
+      let best = null;
+      let bestSim = 0;
+      for (const fact of facts) {
+        const sim = cosine(vec, fact.embedding);
+        if (sim > bestSim) {
+          bestSim = sim;
+          best = fact;
+        }
+      }
+
+      const decision = best ? mergeDecision(bestSim) : 'new';
+      if (decision === 'merge') {
+        const times = cluster.map((e) => e.at).sort();
+        store.updateFact(db, best.id, {
+          lastConfirmedAt: times[times.length - 1],
+          sources: [...new Set([...(best.sources ?? []), ...cluster.map((e) => e.id)])],
+          weight: Math.min(1, Number(best.weight ?? 0.8) + 0.05),
+        });
+        factsMerged += 1;
+      } else if (decision === 'new') {
+        const times = cluster.map((e) => e.at).sort();
+        const fact = {
+          id: newId('sem'),
+          tenant,
+          text,
+          participants: cluster[0].participants ?? [],
+          subject: cluster[0].subject ?? [],
+          sensitivity: cluster[0].sensitivity ?? 'channel',
+          contentClass: cluster[0].contentClass ?? 'event',
+          firstAt: times[0],
+          lastConfirmedAt: times[times.length - 1],
+          sources: cluster.map((e) => e.id),
+          confidence: 0.75,
+          weight: 0.8,
+          embedding: vec,
+        };
+        store.insertFact(db, fact);
+        facts.push(fact);
+        factsCreated += 1;
+      } else {
+        factsSimilar += 1; // 相似但不同 → 并存（模式分离）
+      }
+    }
+
+    // 衰减：事件按 30 天半衰期，事实按 365 天
+    let decayed = 0;
+    for (const ev of pending) {
+      const next = decayWeight(ev.weight ?? 0.5, ev.at, { now, halfLifeDays: HALF_LIFE.event });
+      if (Math.abs(next - Number(ev.weight ?? 0)) > 0.001) {
+        store.updateEventWeight(db, ev.id, next);
+        decayed += 1;
+      }
+    }
+    for (const fact of facts) {
+      const next = decayWeight(fact.weight ?? 0.8, fact.lastConfirmedAt ?? fact.firstAt, { now, halfLifeDays: HALF_LIFE.fact });
+      if (Math.abs(next - Number(fact.weight ?? 0)) > 0.001) {
+        store.updateFactWeight(db, fact.id, next);
+        decayed += 1;
+      }
+    }
+
+    // 关系重算（本批涉及到的联系人）
+    const contacts = new Set();
+    for (const ev of pending) {
+      for (const p of ev.participants ?? []) {
+        if (p !== selfId() && !String(p).startsWith('group:')) contacts.add(p);
+      }
+    }
+    for (const c of contacts) refreshRelationship(tenant, c);
+
+    const finishedAt = new Date(now).toISOString();
+    store.setTenantState(db, tenant, { lastConsolidatedAt: finishedAt });
+
+    return {
+      ok: true,
+      tenant,
+      scanned: pending.length,
+      clusters: clusters.length,
+      factsCreated,
+      factsMerged,
+      factsSimilar,
+      decayed,
+      finishedAt,
+    };
+  }
+
   return {
     config,
     db,
@@ -244,15 +376,29 @@ export function createEngine(options = {}) {
     schema: schemaInfo(db),
     ingest,
     recall,
+    consolidate,
     refreshRelationship: (contactId, opts) => refreshRelationship(config.tenant, contactId, opts),
     relationships: (tenant = config.tenant) => store.listRelationships(db, tenant),
     relationship: (contactId, tenant = config.tenant) => store.getRelationship(db, tenant, contactId),
     persona: (tenant = config.tenant) => store.getPersona(db, tenant),
-    setPersona: (markdown, tenant = config.tenant) => {
-      store.setPersona(db, tenant, markdown, nowIso(clock));
+    setPersona: (markdown, tenant = config.tenant, traits = null) => {
+      const merged = { ...(config.personaTraits ?? {}), ...(traits ?? {}) };
+      store.setPersona(db, tenant, markdown, nowIso(clock), merged);
       return store.getPersona(db, tenant);
     },
     narrative: (tenant = config.tenant) => store.getNarrative(db, tenant),
+    disclosureFor: (memory, audience = [], tenant = config.tenant) => {
+      const relMap = {};
+      for (const c of audience) {
+        const rel = store.getRelationship(db, tenant, c);
+        if (rel) relMap[c] = rel;
+      }
+      return computeDisclosure({
+        memory, audience, relationships: relMap,
+        traits: store.getPersona(db, tenant)?.traits ?? {},
+        config: config.disclosure,
+      });
+    },
     stats: (tenant = config.tenant) => store.stats(db, tenant),
     close: () => db.close(),
     SCHEMA_VERSION,

@@ -51,6 +51,13 @@ if (command === 'stats') {
   process.exit(0);
 }
 
+if (command === 'consolidate') {
+  const result = await engine.consolidate();
+  console.log(JSON.stringify(result, null, 2));
+  engine.close();
+  process.exit(0);
+}
+
 if (command !== 'serve') {
   console.error(`未知命令: ${command}\n用法: mnema serve | mnema stats`);
   process.exit(1);
@@ -62,7 +69,29 @@ console.log(`mnema listening on http://${addr.address}:${addr.port}`);
 console.log(`  schema v${engine.schema.schemaVersion} · tenant=${engine.config.tenant} · embedding=${engine.embedding.activeKind}`);
 console.log(`  db: ${engine.config.storage.path}`);
 
+// 夜间巩固调度（默认 03:30，可用 --at 或 MNEMA_CONSOLIDATE_AT 改）
+const at = String(flags.at ?? process.env.MNEMA_CONSOLIDATE_AT ?? '03:30');
+const [hh, mm] = at.split(':').map(Number);
+let lastRunDay = null;
+const scheduler = setInterval(async () => {
+  const now = new Date();
+  const day = now.toISOString().slice(0, 10);
+  if (now.getHours() !== hh || now.getMinutes() !== mm || lastRunDay === day) return;
+  lastRunDay = day;
+  try {
+    const result = await engine.consolidate();
+    console.log('[consolidate]', JSON.stringify(result));
+  } catch (error) {
+    console.error('[consolidate] 失败:', error?.message ?? error);
+  }
+}, 60_000);
+scheduler.unref?.();
+if (Number.isFinite(hh) && Number.isFinite(mm)) {
+  console.log(`  consolidation scheduled at ${at} daily`);
+}
+
 const shutdown = async () => {
+  clearInterval(scheduler);
   await http.close();
   engine.close();
   process.exit(0);

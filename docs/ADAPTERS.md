@@ -282,3 +282,74 @@ POST /v1/signals
 - [ ] 叙事只读展示（不参与编辑）
 - [ ] 隐私删除走 `/v1/feedback op=forget`
 - [ ] 启动检查 `/v1/schema` 的 schemaVersion
+
+---
+
+## 11. 巩固与披露（P2 新增）
+
+### 11.1 触发巩固
+
+```http
+POST /v1/consolidate
+{ "tenant": "default" }
+```
+
+返回：
+
+```json
+{ "ok": true, "scanned": 120, "clusters": 18, "factsCreated": 6,
+  "factsMerged": 3, "factsSimilar": 2, "decayed": 120, "finishedAt": "..." }
+```
+
+- `scanned` — 自上次巩固以来的新事件数（水位由引擎自己记）
+- `factsCreated` — 新提炼的事实
+- `factsMerged` — 与已有事实合并（相似 ≥0.92）
+- `factsSimilar` — 相似但不同（0.75~0.92），按"模式分离"并存
+- `decayed` — 被衰减的条目数
+
+服务端默认每天 03:30 自动跑一次（`--at` 或 `MNEMA_CONSOLIDATE_AT` 可改）。
+适配器一般不需要主动调用，除非想"立刻整理"。
+
+### 11.2 recall 的披露字段
+
+`/v1/recall` 返回的每个 item 带 `disclosure`：
+
+```json
+{
+  "id": "ev_...", "text": "他最近工作上有变动", "score": 0.71,
+  "disclosure": { "level": 2, "reason": "第三方近况，最多概括", "subjectPresent": false },
+  "withheld": false
+}
+```
+
+| level | 适配器该怎么做 |
+|---|---|
+| 3 | 正常把 text 拼进提示词 |
+| 2 | 拼进去，并附加"只能概括，不要复述原话" |
+| 1 | **不要**把 text 拼进去；只给"你知道但不宜细说"的提示 |
+| 0 | 完全不出现 |
+
+`rendered` 字段已经按等级处理好了（等级 1 的条目不出现原文，只加一行提示），
+直接用 `rendered` 最省事。
+
+### 11.3 性格参数（影响披露）
+
+`PUT /v1/persona` 支持 `traits`：
+
+```json
+{ "markdown": "# 性格底色\n- 嘴上毒心里软",
+  "traits": { "discretion": 0.6, "gossip": 0.3, "protectiveness": 0.7 } }
+```
+
+| 参数 | 0~1 | 作用 |
+|---|---|---|
+| `discretion` | 越高越谨慎 | 整体压低披露等级 |
+| `gossip` | 越高越爱聊 | 非秘密内容 +1 |
+| `protectiveness` | 越高越护短 | 替不在场的人保留 → -1 |
+
+`GET /v1/persona` 返回 `{ markdown, traits, updatedAt }`。
+
+### 11.4 单独问"这条能不能说"
+
+引擎内部有 `disclosureFor(memory, audience, tenant)`；
+HTTP 侧暂未暴露独立端点（可以在 recall 的 item.disclosure 里拿到同样的判定）。

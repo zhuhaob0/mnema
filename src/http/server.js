@@ -103,6 +103,16 @@ export function createHttpServer(engine, { token = engine.config.http.token } = 
         return;
       }
 
+      if (path === '/v1/consolidate' && req.method === 'POST') {
+        const body = await readJson(req);
+        const result = await engine.consolidate({
+          tenant: body.tenant ?? engine.config.tenant,
+          now: body.now ? Number(body.now) : undefined,
+        });
+        sendJson(res, 200, result);
+        return;
+      }
+
       if (path === '/v1/relationships' && req.method === 'GET') {
         const list = engine.relationships(url.searchParams.get('tenant') ?? undefined);
         sendJson(res, 200, { ok: true, relationships: list });

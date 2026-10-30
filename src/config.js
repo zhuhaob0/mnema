@@ -40,6 +40,10 @@ export const DEFAULTS = {
     candidatePool: 300,
   },
   decay: { topic: 3, event: 30, fact: 365, narrative: 0, floor: 0.15, emotionalMultiplier: 3 },
+  // 披露策略（记得 ≠ 该说）
+  disclosure: { maxLevel: 3, minLevel: 0 },
+  // 性格参数（owner 可改）；影响披露宽严
+  personaTraits: { discretion: 0.5, gossip: 0.3, protectiveness: 0.5 },
 };
 
 function isObject(v) {
