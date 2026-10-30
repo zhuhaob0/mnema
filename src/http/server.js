@@ -3,6 +3,7 @@
  */
 
 import http from 'node:http';
+import { CONSOLE_HTML } from './console.js';
 
 function sendJson(res, status, payload) {
   const body = JSON.stringify(payload);
@@ -41,6 +42,12 @@ export function createHttpServer(engine, { token = engine.config.http.token } = 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     const path = url.pathname.replace(/\/+$/, '') || '/';
+
+    if (path === '/console') {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      res.end(CONSOLE_HTML);
+      return;
+    }
 
     if (path === '/' || path === '/v1/health') {
       sendJson(res, 200, {
@@ -100,6 +107,36 @@ export function createHttpServer(engine, { token = engine.config.http.token } = 
           maxItems: body?.budget?.maxItems,
         });
         sendJson(res, 200, { ok: true, ...result });
+        return;
+      }
+
+      if (path === '/v1/memories' && req.method === 'GET') {
+        const list = engine.memories({
+          tenant: url.searchParams.get('tenant') ?? undefined,
+          kind: url.searchParams.get('kind') ?? 'all',
+          limit: Number(url.searchParams.get('limit') ?? 100),
+          offset: Number(url.searchParams.get('offset') ?? 0),
+        });
+        sendJson(res, 200, { ok: true, memories: list });
+        return;
+      }
+
+      if (path === '/v1/feedback' && req.method === 'POST') {
+        const body = await readJson(req);
+        const result = engine.feedback({
+          tenant: body.tenant ?? undefined,
+          op: body.op,
+          memoryId: body.memoryId,
+          text: body.text ?? '',
+        });
+        sendJson(res, result.ok ? 200 : 400, result);
+        return;
+      }
+
+      if (path.startsWith('/v1/versions/') && req.method === 'GET') {
+        const memoryId = decodeURIComponent(path.slice('/v1/versions/'.length));
+        const versions = engine.versions(memoryId, url.searchParams.get('tenant') ?? undefined);
+        sendJson(res, 200, { ok: true, versions });
         return;
       }
 

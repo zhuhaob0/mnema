@@ -330,3 +330,30 @@ export function listEventsSince(db, { tenant, since, limit = 500 } = {}) {
       embedding: bufferToVector(row.embedding), createdAt: row.created_at,
     }));
 }
+
+export function updateEventGist(db, id, gist, weight) {
+  db.prepare('UPDATE events SET gist = ?, weight = COALESCE(?, weight) WHERE id = ?').run(gist, weight ?? null, id);
+}
+
+export function deleteEvent(db, id) {
+  db.prepare('DELETE FROM events WHERE id = ?').run(id);
+}
+
+export function listMemories(db, { tenant, kind = 'all', limit = 100, offset = 0 } = {}) {
+  const rows = [];
+  if (kind === 'all' || kind === 'episodic' || kind === 'event') {
+    const events = db
+      .prepare('SELECT * FROM events WHERE tenant = ? ORDER BY at DESC LIMIT ? OFFSET ?')
+      .all(tenant, limit, offset);
+    rows.push(...events.map((r) => ({ ...rowToEvent(r), kind: 'episodic' })));
+  }
+  if (kind === 'all' || kind === 'semantic' || kind === 'fact') {
+    const facts = db
+      .prepare('SELECT * FROM facts WHERE tenant = ? ORDER BY last_confirmed_at DESC LIMIT ? OFFSET ?')
+      .all(tenant, limit, offset);
+    rows.push(...facts.map((r) => ({ ...rowToFact(r), kind: 'semantic' })));
+  }
+  return rows
+    .sort((a, b) => new Date(b.at ?? b.lastConfirmedAt ?? 0) - new Date(a.at ?? a.lastConfirmedAt ?? 0))
+    .slice(0, limit);
+}

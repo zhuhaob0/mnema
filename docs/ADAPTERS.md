@@ -384,3 +384,67 @@ POST /v1/narrative   { "tenant": "default" }
 - 唤醒时：`recall` 的 `rendered` 已包含叙事，通常不用单独取
 - 需要展示"它最近的状态"：直接读 `/v1/narrative`
 - 想让它"立刻整理一下心情"：调 `POST /v1/narrative`
+
+---
+
+## 13. 再巩固与浏览（P4 新增）
+
+### 13.1 纠正 / 确认 / 遗忘
+
+```http
+POST /v1/feedback
+{ "op": "correct", "memoryId": "sem_x1", "text": "他不是跳槽，是被裁了" }
+```
+
+| op | 行为 | 返回 |
+|---|---|---|
+| `correct` | 写新版本，旧版本进版本链，内容替换 | `{ ok, from, to }` |
+| `confirm` | 更新确认时间，权重 +0.05 | `{ ok, text }` |
+| `forget` | **真删除**（隐私要求），保留一条版本记录 | `{ ok, forgotten }` |
+
+**为什么 forget 要留版本记录**：删掉的是"内容"，但"曾经有过这条记忆"这件事本身要留痕，
+否则没法审计"某条信息是否被处理过"。
+
+### 13.2 版本链
+
+```http
+GET /v1/versions/sem_x1
+```
+
+返回该记忆的历史版本（按时间倒序）。每次 `correct` / `forget` 都会追加一条。
+
+### 13.3 浏览记忆
+
+```http
+GET /v1/memories?kind=all|episodic|semantic&limit=100&offset=0
+```
+
+用于控制台/调试。返回条目带 `kind`（`episodic` 事件 / `semantic` 事实）。
+
+### 13.4 控制台
+
+浏览器打开 `http://127.0.0.1:8321/console?token=<你的 token>`：
+
+| 页签 | 内容 |
+|---|---|
+| 记忆 | 事件与事实列表，本地关键词过滤 |
+| 关系 | 联系人等级、分数、信号明细 |
+| 叙事 | 只读展示 |
+| 性格 | 可编辑并保存 |
+
+页面本身不需要 token（本地 HTML），但数据接口需要；token 会存进 localStorage。
+
+### 13.5 MCP 工具（形态 C，已实现）
+
+零依赖的 stdio JSON-RPC 实现，客户端配置：
+
+```json
+{ "command": "node", "args": ["E:/Code/mnema/src/mcp/cli.js"],
+  "env": { "MNEMA_DB": "E:/Code/mnema/data/mnema.db" } }
+```
+
+暴露 7 个工具：`mnema_remember` / `mnema_recall` / `mnema_relationships` /
+`mnema_narrative` / `mnema_persona` / `mnema_forget` / `mnema_stats`。
+
+> 说明：MCP 部分**没有引入 SDK 依赖**，按协议手写了 `initialize` / `tools/list` / `tools/call`。
+> 好处是零依赖、可直接审阅；若将来协议有变，换 SDK 只需替换 `src/mcp/server.js` 的 transport 层。

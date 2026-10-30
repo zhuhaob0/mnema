@@ -37,6 +37,7 @@
                     "stats":  "node src/cli.js stats"
                 },
     "bin":  {
-                "mnema":  "./src/cli.js"
+                "mnema":  "./src/cli.js",
+                "mnema-mcp":  "./src/mcp/cli.js"
             }
 }

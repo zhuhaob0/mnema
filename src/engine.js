@@ -447,6 +447,68 @@ export function createEngine(options = {}) {
       });
     },
     stats: (tenant = config.tenant) => store.stats(db, tenant),
+
+    /** 浏览记忆（控制台/调试用） */
+    memories: ({ tenant = config.tenant, kind = 'all', limit = 100, offset = 0 } = {}) => (
+      store.listMemories(db, { tenant, kind, limit, offset })
+    ),
+
+    /**
+     * 再巩固：纠正 / 确认 / 遗忘
+     * - correct：写新版本，旧版本进版本链（记忆改写）
+     * - confirm：确认仍然成立，权重上调
+     * - forget：真删（隐私要求"请忘掉这件事"）
+     */
+    feedback({ tenant = config.tenant, op, memoryId, text = '' } = {}) {
+      if (!memoryId) return { ok: false, error: 'memoryId 不能为空' };
+      if (!['correct', 'confirm', 'forget'].includes(op)) {
+        return { ok: false, error: 'op 必须是 correct / confirm / forget' };
+      }
+      const at = nowIso(clock);
+      const event = store.getEvent(db, memoryId);
+      const fact = event ? null : store.getFact(db, memoryId);
+      if (!event && !fact) return { ok: false, error: '未找到该记忆' };
+
+      const kind = event ? 'episodic' : 'semantic';
+      const oldText = event ? (event.gist ?? '') : (fact.text ?? '');
+
+      if (op === 'confirm') {
+        if (fact) {
+          store.updateFact(db, fact.id, {
+            lastConfirmedAt: at,
+            weight: Math.min(1, Number(fact.weight ?? 0.8) + 0.05),
+          });
+        } else {
+          store.updateEventWeight(db, event.id, Math.min(1, Number(event.weight ?? 0.5) + 0.05));
+        }
+        return { ok: true, op, memoryId, kind, text: oldText };
+      }
+
+      if (op === 'correct') {
+        const next = String(text ?? '').trim();
+        if (!next) return { ok: false, error: 'correct 需要 text' };
+        store.addVersion(db, { tenant, memoryId, kind, text: oldText, at });
+        if (fact) {
+          store.updateFact(db, fact.id, {
+            text: next,
+            lastConfirmedAt: at,
+            weight: Math.min(1, Number(fact.weight ?? 0.8) + 0.05),
+            sources: [...new Set([...(fact.sources ?? []), `correction:${at}`])],
+          });
+        } else {
+          store.updateEventGist(db, event.id, next, Math.min(1, Number(event.weight ?? 0.5) + 0.05));
+        }
+        return { ok: true, op, memoryId, kind, from: oldText, to: next };
+      }
+
+      // forget：真删
+      store.addVersion(db, { tenant, memoryId, kind, text: oldText, at });
+      if (fact) store.deleteFact(db, fact.id);
+      else store.deleteEvent(db, event.id);
+      return { ok: true, op, memoryId, kind, forgotten: oldText };
+    },
+
+    versions: (memoryId, tenant = config.tenant) => store.listVersions(db, tenant, memoryId),
     close: () => db.close(),
     SCHEMA_VERSION,
   };

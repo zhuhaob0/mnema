@@ -42,13 +42,13 @@
 - [x] `/v1/narrative`（GET 只读 / POST 触发重写）
 - [x] 叙事注入 recall 的 rendered（排在记忆之前）
 
-## P4 交付清单
+## P4 交付清单（✅ 已完成）
 
-- [ ] `/v1/feedback`（correct / confirm / forget）
-- [ ] 版本链（`versions` 表）
-- [ ] MCP server（7 个工具）
-- [ ] 控制台页面：记忆浏览/搜索/关系曲线/人格编辑/叙事只读
-- [ ] Node SDK + Python SDK
+- [x] `/v1/feedback`（correct / confirm / forget）
+- [x] 版本链（`memory_versions` 表 + `/v1/versions/:id`）
+- [x] MCP server（7 个工具，零依赖 stdio 实现）
+- [x] 控制台页面：记忆/关系/叙事/性格（`/console`）
+- [ ] Node SDK + Python SDK（后续）
 
 ---
 

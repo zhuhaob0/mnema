@@ -48,6 +48,9 @@ node src/cli.js serve
 # 看统计
 node src/cli.js stats
 
+# 控制台（浏览器打开）
+# http://127.0.0.1:8321/console
+
 # 跑测试
 node --test
 ```
