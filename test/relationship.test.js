@@ -66,8 +66,10 @@ test('关系封顶：只有群聊互动最多 L2；有私聊才放行 L3/L4', ()
   assert.equal(capTierByPrivate('L1', { hasPrivate: false, privateCount: 0 }), 'L1');
   // 加了好友但私聊次数不够
   assert.equal(capTierByPrivate('L4', { hasPrivate: true, privateCount: 1 }), 'L2');
-  // 私聊够 3 次 → 允许 L3
-  assert.equal(capTierByPrivate('L4', { hasPrivate: true, privateCount: 3 }), 'L3');
-  // 私聊够 12 次 → 允许 L4
-  assert.equal(capTierByPrivate('L4', { hasPrivate: true, privateCount: 12 }), 'L4');
+  // 差一次不够
+  assert.equal(capTierByPrivate('L4', { hasPrivate: true, privateCount: 19 }), 'L2');
+  // 私聊够 20 次 → 允许 L3
+  assert.equal(capTierByPrivate('L4', { hasPrivate: true, privateCount: 20 }), 'L3');
+  // 私聊够 50 次 → 允许 L4
+  assert.equal(capTierByPrivate('L4', { hasPrivate: true, privateCount: 50 }), 'L4');
 });
