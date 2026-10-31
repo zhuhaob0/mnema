@@ -448,3 +448,34 @@ GET /v1/memories?kind=all|episodic|semantic&limit=100&offset=0
 
 > 说明：MCP 部分**没有引入 SDK 依赖**，按协议手写了 `initialize` / `tools/list` / `tools/call`。
 > 好处是零依赖、可直接审阅；若将来协议有变，换 SDK 只需替换 `src/mcp/server.js` 的 transport 层。
+
+---
+
+## 14. 批量导入（迁移专用）
+
+```http
+POST /v1/import
+{ "tenant": "default",
+  "events": [ { "text": "…", "at": "…", "participants": ["self","user:1"],
+                "contentClass": "status", "sensitivity": "contact" } ],
+  "facts":  [ { "text": "…", "participants": ["self","user:1"],
+                "contentClass": "preference", "sensitivity": "contact" } ],
+  "interactions": [ { "contactId": "user:1", "at": "…", "chars": 20, "emotion": "anxiety" } ] }
+```
+
+返回：
+
+```json
+{ "ok": true, "importedEvents": 2, "importedFacts": 1,
+  "importedInteractions": 20, "contacts": 1 }
+```
+
+**行为**：
+
+- 跳过编码器与门控，`contentClass` / `sensitivity` / `subject` **按传入值原样落库**
+- 只要求 `text` 非空；其余字段有默认值
+- 导入后自动重算涉及联系人的关系度
+- 用于 v1 → v2 迁移等**受信场景**
+
+**安全**：与其它接口共用 token 鉴权。它绕过门控，所以只应在迁移时开启；
+生产环境建议导入完立即停用（或加环境变量开关）。

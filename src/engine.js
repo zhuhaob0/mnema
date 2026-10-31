@@ -508,6 +508,93 @@ export function createEngine(options = {}) {
       return { ok: true, op, memoryId, kind, forgotten: oldText };
     },
 
+    /**
+     * 批量导入（迁移用）：跳过编码与门控，显式指定内容类别/敏感度/主体。
+     * 仅用于 v1 迁移等受信场景；调用方负责数据正确性。
+     */
+    async importMemories({ tenant = config.tenant, events = [], facts = [], interactions = [] } = {}) {
+      const at = nowIso(clock);
+      const contacts = new Set();
+      let importedEvents = 0;
+      let importedFacts = 0;
+      let importedInteractions = 0;
+
+      for (const e of events) {
+        const text = String(e.text ?? e.gist ?? '').trim();
+        if (!text) continue;
+        const participants = e.participants ?? [];
+        const [vec] = await embedding.embed([text]);
+        store.insertEvent(db, {
+          id: e.id ?? newId('ev'),
+          tenant,
+          at: e.at ?? at,
+          channelId: e.channelId ?? 'import:event',
+          channelKind: e.channelKind ?? 'direct',
+          participants,
+          subject: e.subject ?? participants,
+          relationshipTier: e.relationshipTier ?? null,
+          scene: e.scene ?? null,
+          gist: text.length > 120 ? `${text.slice(0, 119)}…` : text,
+          emotion: e.emotion ?? null,
+          salience: Number(e.salience ?? 0.5),
+          sensitivity: e.sensitivity ?? 'channel',
+          contentClass: e.contentClass ?? 'event',
+          tags: Array.isArray(e.tags) ? e.tags : [],
+          pointer: e.pointer ?? null,
+          weight: Number(e.weight ?? e.salience ?? 0.5),
+          embedding: vec,
+          createdAt: at,
+        });
+        importedEvents += 1;
+        for (const p of participants) {
+          if (p !== selfId() && !String(p).startsWith('group:')) contacts.add(p);
+        }
+      }
+
+      for (const f of facts) {
+        const text = String(f.text ?? '').trim();
+        if (!text) continue;
+        const participants = f.participants ?? [];
+        const [vec] = await embedding.embed([text]);
+        store.insertFact(db, {
+          id: f.id ?? newId('sem'),
+          tenant,
+          text,
+          participants,
+          subject: f.subject ?? participants,
+          sensitivity: f.sensitivity ?? 'channel',
+          contentClass: f.contentClass ?? 'event',
+          firstAt: f.at ?? f.firstAt ?? at,
+          lastConfirmedAt: f.at ?? f.lastConfirmedAt ?? at,
+          sources: f.sources ?? ['import'],
+          confidence: Number(f.confidence ?? 0.7),
+          weight: Number(f.weight ?? 0.75),
+          embedding: vec,
+        });
+        importedFacts += 1;
+        for (const p of participants) {
+          if (p !== selfId() && !String(p).startsWith('group:')) contacts.add(p);
+        }
+      }
+
+      for (const i of interactions) {
+        if (!i.contactId) continue;
+        store.insertInteraction(db, {
+          tenant,
+          contactId: i.contactId,
+          channelId: i.channelId ?? 'import',
+          at: i.at ?? at,
+          chars: Number(i.chars ?? 0),
+          emotion: i.emotion ?? null,
+        });
+        importedInteractions += 1;
+        contacts.add(i.contactId);
+      }
+
+      for (const contactId of contacts) refreshRelationship(tenant, contactId);
+
+      return { ok: true, importedEvents, importedFacts, importedInteractions, contacts: contacts.size };
+    },
     versions: (memoryId, tenant = config.tenant) => store.listVersions(db, tenant, memoryId),
     close: () => db.close(),
     SCHEMA_VERSION,

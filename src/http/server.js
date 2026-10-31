@@ -140,6 +140,18 @@ export function createHttpServer(engine, { token = engine.config.http.token } = 
         return;
       }
 
+      if (path === '/v1/import' && req.method === 'POST') {
+        const body = await readJson(req, 20_000_000);
+        const result = await engine.importMemories({
+          tenant: body.tenant ?? undefined,
+          events: Array.isArray(body.events) ? body.events : [],
+          facts: Array.isArray(body.facts) ? body.facts : [],
+          interactions: Array.isArray(body.interactions) ? body.interactions : [],
+        });
+        sendJson(res, 200, result);
+        return;
+      }
+
       if (path === '/v1/consolidate' && req.method === 'POST') {
         const body = await readJson(req);
         const result = await engine.consolidate({
