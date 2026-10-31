@@ -137,6 +137,7 @@ class MnemaSupervisor {
   async start() {
     if (this.disposed) return this.snapshot()
     if (this.child) return this.snapshot()
+    this.stopping = false
     if (await portOpen(Number(this.config.port))) {
       this.state = 'external'
       return this.snapshot()
@@ -172,11 +173,15 @@ class MnemaSupervisor {
       })
 
       child.once('exit', (code, signal) => {
-        const wasDisposed = this.disposed
+        const wasStopped = this.stopping || this.disposed
         this.lastExit = { code, signal, at: new Date().toISOString() }
         this.child = null
         this.pid = null
-        if (wasDisposed) { this.state = 'stopped'; return }
+        if (wasStopped) {
+          this.stopping = false
+          this.state = 'stopped'
+          return
+        }
         if (code === 2 || /已有实例|EADDRINUSE/.test(this.lastError || '')) {
           this.state = 'external'
           log('mnema 报告端口被占用，转为认领外部实例')
