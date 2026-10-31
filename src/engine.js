@@ -276,10 +276,25 @@ export function createEngine(options = {}) {
     let renderedFinal = rendered;
     let sharedRecent = [];
     if (config.recall?.includeSharedRecent !== false) {
+      // 只挑有信息量的：\"[图片]\"、\"@123456\" 这种占位符本身没内容，
+      // 排上来只会把真正有用的描述挤掉（实测补了图片描述却还是召回 \"[图片]\"）
+      const meaningful = (item) => {
+        const text = String(item.text ?? item.gist ?? '')
+          .replace(/\[图片\]|\[表情\]|\[语音\]|@\d+/g, '')
+          .trim();
+        return text.length >= 6;
+      };
+      const seenText = new Set();
       sharedRecent = items
-        .filter((i) => i.sensitivity === 'shared' && i.channelId && i.channelId !== channelId && (i.weight ?? 1) >= floor)
+        .filter((i) => i.sensitivity === 'shared' && i.channelId && i.channelId !== channelId && (i.weight ?? 1) >= floor && meaningful(i))
         .sort((a, b) => String(b.at ?? '').localeCompare(String(a.at ?? '')))
-        .slice(0, 3);
+        .filter((i) => {
+          const key = String(i.text ?? i.gist ?? '').slice(0, 24);
+          if (seenText.has(key)) return false;
+          seenText.add(key);
+          return true;
+        })
+        .slice(0, 5);
       if (sharedRecent.length > 0) {
         const block = ['（来自其它会话的近期记忆，可以参考，但不要当成当前对话）',
           ...sharedRecent.map((i) => '- ' + String(i.text ?? i.gist ?? '').slice(0, 120))].join('\n');
