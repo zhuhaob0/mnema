@@ -197,7 +197,7 @@ class MnemaSupervisor {
       log(`已启动 mnema pid=${child.pid} port=${this.config.port} db=${this.dbPath}`)
       const ok = await this.waitPort(Number(this.config.port), 15000)
       this.state = ok ? 'ready' : 'starting'
-      if (ok) log('mnema 就绪')
+      if (ok) { this.restarts = 0; log('mnema 就绪') }   // 稳定起来后清零，避免重启计数一直累积到上限
       return this.snapshot()
     } catch (error) {
       this.state = 'failed'
