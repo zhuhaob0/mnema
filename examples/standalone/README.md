@@ -1,6 +1,13 @@
 # 最小接入示例（standalone）
 
-**不依赖 DSH、不依赖任何 agent 框架**，只用 `fetch` 调 mnema 的 HTTP API —— 用来证明「mnema 是通用记忆引擎」。
+**不依赖 DSH、不依赖任何 agent 框架**，只用 HTTP 调 mnema 的 API —— 用来证明「mnema 是通用记忆引擎」。
+
+同一份演示有两个实现，行为完全一致：
+
+| 文件 | 语言 | 依赖 |
+|---|---|---|
+| `demo.mjs` | Node.js | 无（用内置 `fetch`） |
+| `demo.py` | Python 3.8+ | 无（只用标准库 `urllib`） |
 
 ## 跑起来
 
@@ -8,8 +15,9 @@
 # 1) 启动服务（用独立的 demo 库，不碰你的真实记忆）
 node src/cli.js serve --port 8321 --db ./data/demo.db
 
-# 2) 另开一个终端跑示例
+# 2) 另开一个终端跑示例（二选一）
 node examples/standalone/demo.mjs
+python examples/standalone/demo.py
 ```
 
 真实输出：

@@ -37,7 +37,7 @@
 
 - **[设计文档](docs/DESIGN.md)** — 记忆模型：分层、关系度、编码、巩固、检索、遗忘
 - **[接入规范](docs/ADAPTERS.md)** — 怎么把任意应用接进来：事件、检索、扩展点、部署适配器（§15）
-- **[最小接入示例](examples/standalone)** — 30 行纯 HTTP 示例，不依赖任何 agent 框架
+- **[最小接入示例](examples/standalone)** — Node / Python 两个纯 HTTP 示例，不依赖任何 agent 框架
 - **[路线图](docs/ROADMAP.md)** — 分期与后续集成
 
 ## 快速开始
