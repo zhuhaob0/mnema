@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 const MIGRATIONS = [
   // v1 → 事件索引（L1）
@@ -127,6 +127,13 @@ const MIGRATIONS = [
     last_consolidated_at TEXT,
     last_narrative_at TEXT
   );
+  `,
+  // v6 → 事实也要记录来源会话：否则私聊抽象出的事实没有 channel 可比较，
+  //      召回时只能靠参与者兜底，会把私密内容泄漏到群聊。
+  `
+  ALTER TABLE facts ADD COLUMN channel_id TEXT;
+  ALTER TABLE facts ADD COLUMN channel_kind TEXT;
+  CREATE INDEX IF NOT EXISTS idx_facts_channel ON facts(tenant, channel_id);
   `,
 ];
 

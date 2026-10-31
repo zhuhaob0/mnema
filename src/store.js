@@ -38,6 +38,8 @@ function rowToEvent(row) {
     weight: row.weight,
     embedding: bufferToVector(row.embedding),
     createdAt: row.created_at,
+    channelId: row.channel_id ?? null,
+    channelKind: row.channel_kind ?? null,
   };
 }
 
@@ -59,6 +61,8 @@ function rowToFact(row) {
     supersededBy: row.superseded_by,
     embedding: bufferToVector(row.embedding),
     createdAt: row.created_at,
+    channelId: row.channel_id ?? null,
+    channelKind: row.channel_kind ?? null,
   };
 }
 
@@ -113,14 +117,16 @@ export function updateEventWeight(db, id, weight) {
 export function insertFact(db, fact) {
   db.prepare(`INSERT INTO facts (
       id, tenant, text, participants, subject, sensitivity, content_class, first_at,
-      last_confirmed_at, sources, confidence, weight, embedding, superseded_by, created_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      last_confirmed_at, sources, confidence, weight, embedding, superseded_by, created_at,
+      channel_id, channel_kind
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
     fact.id, fact.tenant, fact.text, toJson(fact.participants),
     toJson(fact.subject ?? fact.participants ?? []),
     fact.sensitivity, fact.contentClass ?? 'event', fact.firstAt,
     fact.lastConfirmedAt ?? fact.firstAt, toJson(fact.sources ?? []),
     fact.confidence ?? 0.8, fact.weight ?? 0.8,
     vectorToBuffer(fact.embedding), fact.supersededBy ?? null, fact.createdAt ?? fact.firstAt,
+    fact.channelId ?? null, fact.channelKind ?? null,
   );
   return fact.id;
 }

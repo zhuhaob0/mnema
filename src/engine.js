@@ -86,6 +86,12 @@ export function createEngine(options = {}) {
     return rel;
   }
 
+  /** 调用方可显式指定 sensitivity（shared / channel / contact），非法值忽略 */
+  function overrideSensitivity(value) {
+    const v = String(value ?? '');
+    return ['shared', 'channel', 'contact'].includes(v) ? v : undefined;
+  }
+
   async function ingest({ tenant = config.tenant, channel, events = [], meta = {} } = {}) {
     const at = nowIso(clock);
     const channelKind = channel?.kind ?? 'direct';
@@ -161,7 +167,7 @@ export function createEngine(options = {}) {
         gist: coded.gist,
         emotion: coded.emotion,
         salience: coded.salience,
-        sensitivity: coded.sensitivity,
+        sensitivity: overrideSensitivity(raw?.sensitivity) ?? coded.sensitivity,
         contentClass: coded.contentClass,
         tags: coded.tags,
         pointer: `${meta?.pointerPrefix ?? 'archive'}://${String(raw?.at ?? at).slice(0, 10)}/${channel?.id ?? 'unknown'}#${raw?.turnId ?? ''}`,
@@ -182,7 +188,9 @@ export function createEngine(options = {}) {
           text: factText,
           participants,
           subject: coded.subject ?? participants,
-          sensitivity: coded.sensitivity,
+          sensitivity: overrideSensitivity(raw?.sensitivity) ?? coded.sensitivity,
+          channelId: ev.channelId,
+          channelKind: ev.channelKind,
           contentClass: coded.contentClass,
           firstAt: ev.at,
           lastConfirmedAt: ev.at,
@@ -314,7 +322,11 @@ export function createEngine(options = {}) {
           participants: cluster[0].participants ?? [],
           subject: cluster[0].subject ?? [],
           sensitivity: cluster[0].sensitivity ?? 'channel',
+          channelId: cluster[0].channelId ?? null,
+          channelKind: cluster[0].channelKind ?? null,
           contentClass: cluster[0].contentClass ?? 'event',
+          channelId: cluster[0].channelId ?? null,
+          channelKind: cluster[0].channelKind ?? null,
           firstAt: times[0],
           lastConfirmedAt: times[times.length - 1],
           sources: cluster.map((e) => e.id),
@@ -564,6 +576,8 @@ export function createEngine(options = {}) {
           subject: f.subject ?? participants,
           sensitivity: f.sensitivity ?? 'channel',
           contentClass: f.contentClass ?? 'event',
+          channelId: f.channelId ?? null,
+          channelKind: f.channelKind ?? null,
           firstAt: f.at ?? f.firstAt ?? at,
           lastConfirmedAt: f.at ?? f.lastConfirmedAt ?? at,
           sources: f.sources ?? ['import'],
