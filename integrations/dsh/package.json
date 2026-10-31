@@ -1,0 +1,38 @@
+{
+  "name": "mnema-supervisor",
+  "version": "0.1.0",
+  "description": "DSH 插件：托管 mnema 记忆服务（插件启用即启动，停用即停止）",
+  "type": "module",
+  "main": "./lib/index.mjs",
+  "license": "MIT",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "mnema",
+    "memory",
+    "process-supervisor"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.5"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zhuhaob0/dsh-plugin-mnema.git"
+  }
+}

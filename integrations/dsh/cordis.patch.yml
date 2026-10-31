@@ -1,0 +1,9 @@
+# mnema-supervisor：把 mnema 记忆服务交给 DSH 宿主托管。
+# 插件启用 → 拉起 mnema；插件停用（移出 bundles）→ 停止服务。
+- insert:
+    - id: mnema-supervisor
+      name: mnema-supervisor
+      config:
+        mnemaDir: 'E:\Code\mnema'
+        port: 8321
+        autoStart: true

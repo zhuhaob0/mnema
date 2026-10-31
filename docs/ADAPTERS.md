@@ -479,3 +479,35 @@ POST /v1/import
 
 **安全**：与其它接口共用 token 鉴权。它绕过门控，所以只应在迁移时开启；
 生产环境建议导入完立即停用（或加环境变量开关）。
+
+## 15. 部署适配器（进程生命周期）
+
+核心只提供 HTTP 服务，**不假设宿主是谁**。把 mnema 拉起来/停下去属于部署层，
+由各产品的适配器负责；适配器放在 `integrations/<宿主名>/`，与核心**单向依赖**：
+
+```
+integrations/dsh  →  依赖 mnema（HTTP）
+mnema 核心        →  绝不依赖 DSH
+```
+
+### 15.1 适配器职责（只有三件事）
+
+1. **启动**：`node src/cli.js serve --port <port> --db <path>`
+2. **探活**：轮询 `GET /v1/health` 直到 200（或端口可连）
+3. **停止**：终止子进程（Windows 用 `taskkill /PID <pid> /T /F`）
+
+身份映射放在适配器里：宿主的 session/user 映射到 mnema 的 `tenant` / `persona`。
+
+### 15.2 已提供
+
+| 宿主 | 位置 | 形态 |
+|---|---|---|
+| DSH（DeepSeek Harness） | [`integrations/dsh`](../integrations/dsh) | Cordis 插件：插件启用即启动、停用即停止，崩溃指数退避重启 |
+| 任意进程管理器 | — | systemd / launchd / pm2 / NSSM 托管 `mnema serve` |
+| 任意语言/框架 | — | 直接走 REST（见 §2），自己管进程 |
+
+### 15.3 为什么不把适配器并进核心
+
+- 核心不引入宿主 SDK 依赖（DSH 适配器依赖 `@deepseek-ai/schemastery`，仅它自己用）
+- 换宿主不影响核心，换核心不影响适配器
+- 同仓库便于发现与版本对齐，但依赖方向必须保持单向
