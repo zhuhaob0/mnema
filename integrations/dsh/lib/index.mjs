@@ -226,6 +226,7 @@ class MnemaSupervisor {
   }
 
   async stop() {
+    this.stopping = true;
     if (this.restartTimer) { clearTimeout(this.restartTimer); this.restartTimer = null }
     const child = this.child
     this.child = null
