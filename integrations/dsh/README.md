@@ -1,6 +1,6 @@
 # mnema-supervisor
 
-DSH 插件：把 [mnema](https://github.com/zhuhaob0/mnema) 记忆服务交给 DSH 宿主托管。
+DSH 部署适配器：把 [mnema](../../) 记忆服务交给 DSH 宿主托管。
 
 > **插件启用 → mnema 启动；插件停用 → mnema 停止。**
 > 不再需要开机自启、计划任务或手动开终端。
@@ -52,7 +52,7 @@ DSH 退出 / 插件停用 → taskkill /T 自己的子进程
 ```powershell
 # 1) 链接到 DSH profile
 cd $env:USERPROFILE\.dsh\profiles\desktop
-pnpm add link:E:/Code/dsh-plugin-mnema
+pnpm add link:E:/Code/mnema/integrations/dsh
 
 # 2) 在 package.json 的 dsh.profile.bundles 里加 'mnema-supervisor'
 
