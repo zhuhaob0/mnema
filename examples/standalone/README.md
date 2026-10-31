@@ -77,6 +77,27 @@ const { rendered } = await (await fetch(`${BASE}/v1/recall`, {
 
 `rendered` 是已经排好序、按披露等级裁剪过的文本块，直接塞进提示词即可。
 
+Python 版同样只是两段 HTTP 调用（完整版见 `demo.py`）：
+
+```python
+import json, urllib.request
+
+def post(path, payload):
+    req = urllib.request.Request(
+        f"http://127.0.0.1:8321{path}",
+        data=json.dumps(payload).encode(),
+        headers={"content-type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read())
+
+post("/v1/events", {"tenant": "my-agent", "channel": {"id": session_id, "participants": [user_id]}, "events": [{"role": "user", "text": text}]})
+rendered = post("/v1/recall", {"tenant": "my-agent", "channelId": session_id, "participants": [user_id], "query": user_text})["rendered"]
+```
+
+> Windows 老终端（GBK）下 `demo.py` 已自动把输出切到 UTF-8；若仍乱码，先执行 `chcp 65001`。
+
 ## 可选配置
 
 | 环境变量 | 默认 | 说明 |
