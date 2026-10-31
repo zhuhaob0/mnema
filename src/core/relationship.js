@@ -78,6 +78,24 @@ export function applyDecay({ score, lastInteract, now = Date.now(), cfg }) {
 
 export const TIER_RANK = { L0: 0, L1: 1, L2: 2, L3: 3, L4: 4 };
 
+/**
+ * 等级封顶：关系要"走到私聊里"才算更近。
+ *
+ * - 只有群聊互动（没加好友）→ 最多 L2
+ * - 有私聊（好友）→ L2 起算，私聊达到阈值后放行 L3 / L4
+ *
+ * 依据：群聊是公共场合，热络不等于亲近；真正的亲近由一对一交流累积。
+ */
+export function capTierByPrivate(tier, { hasPrivate = false, privateCount = 0, cfg = {} } = {}) {
+  const l3 = Number(cfg.privateForL3 ?? 3);
+  const l4 = Number(cfg.privateForL4 ?? 12);
+  let maxTier = 'L2';
+  if (hasPrivate) {
+    maxTier = privateCount >= l4 ? 'L4' : privateCount >= l3 ? 'L3' : 'L2';
+  }
+  return TIER_RANK[tier] > TIER_RANK[maxTier] ? maxTier : tier;
+}
+
 export function atLeastTier(tier, minimum) {
   return (TIER_RANK[tier] ?? 0) >= (TIER_RANK[minimum] ?? 0);
 }

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { rankMemories, renderMemories, sensitivityAllows } from '../src/core/recall.js';
 import { keywordScore, tokenize } from '../src/util/misc.js';
+import { createEngine } from '../src/engine.js';
 
 const baseItem = (over = {}) => ({
   id: over.id ?? 'x',
@@ -94,4 +95,23 @@ test('分词与关键词分：中文 bigram 能命中', () => {
   assert.ok(tokenize('跳槽').includes('跳槽'));
   assert.ok(keywordScore('跳槽', '他说想跳槽但担心') > 0);
   assert.equal(keywordScore('完全无关的词', '跳槽'), 0);
+});
+
+test('召回：其它会话的 shared 记忆会补进 rendered（私聊问得出群聊的事）', async () => {
+  const engine = createEngine({ dbPath: ':memory:' });
+  const at = new Date().toISOString();
+  await engine.ingest({
+    tenant: 't',
+    channel: { id: 'chat:group:9', kind: 'public', participants: ['self', 'group:9'], recordPublic: true },
+    events: [{ role: 'user', text: '周六下午三点公园门口集合去爬山', at, sensitivity: 'shared' }],
+  });
+  await engine.ingest({
+    tenant: 't',
+    channel: { id: 'chat:user:1', kind: 'direct', participants: ['self', 'user:1'] },
+    events: [{ role: 'user', text: '今天代码写完了', at, sensitivity: 'channel' }],
+  });
+  const r = await engine.recall({ tenant: 't', channelId: 'chat:user:1', participants: ['self', 'user:1'], query: '最近怎么样' });
+  assert.ok(r.sharedRecent.length >= 1, '应带出其它会话的共享记忆');
+  assert.match(r.rendered, /爬山/);
+  engine.close();
 });

@@ -8,8 +8,9 @@ import * as store from './store.js';
 import { EmbeddingProvider } from './core/embedding.js';
 import { encodeHeuristic } from './core/encoder.js';
 import { gateContent } from './core/gate.js';
+import { createWriteQueue } from './core/write-queue.js';
 import {
-  applyDecay, blendScore, deriveSignals, scoreFromSignals, tierFromScore,
+  applyDecay, blendScore, capTierByPrivate, deriveSignals, scoreFromSignals, tierFromScore,
 } from './core/relationship.js';
 import { rankMemories, renderMemories } from './core/recall.js';
 import { computeDisclosure } from './core/disclosure.js';
@@ -25,6 +26,8 @@ export function createEngine(options = {}) {
   const clock = options.clock ?? Date.now;
   const db = openDatabase(options.dbPath ?? config.storage.path);
   const embedding = new EmbeddingProvider(config.embedding);
+  // 所有写操作走同一个队列：20ms 窗口攒批 + 串行事务，避免并发抢锁
+  const writeQueue = createWriteQueue({ db, logger: options.logger ?? null });
 
   function selfId() {
     return config.selfId ?? 'self';
@@ -66,7 +69,12 @@ export function createEngine(options = {}) {
       ? applyDecay({ score: existing.score, lastInteract: existing.lastInteract, now: clock(), cfg: config.relationship })
       : null;
     const score = blendScore(decayed, rawScore, config.relationship?.smoothing ?? 0.7);
-    const tier = tierFromScore(score, config.relationship?.thresholds);
+    const privateCount = interactions.filter((i) => String(i.channel_id ?? i.channelId ?? '').startsWith('chat:user:')).length;
+    const tier = capTierByPrivate(tierFromScore(score, config.relationship?.thresholds), {
+      hasPrivate: privateCount > 0,
+      privateCount,
+      cfg: config.relationship,
+    });
     const firstSeen = existing?.firstSeen
       ?? interactions.reduce((acc, i) => (acc === null || i.at < acc ? i.at : acc), null)
       ?? nowIso(clock);
@@ -92,7 +100,11 @@ export function createEngine(options = {}) {
     return ['shared', 'channel', 'contact'].includes(v) ? v : undefined;
   }
 
-  async function ingest({ tenant = config.tenant, channel, events = [], meta = {} } = {}) {
+  function ingest(args = {}) {
+    return writeQueue.run(() => ingestNow(args));
+  }
+
+  async function ingestNow({ tenant = config.tenant, channel, events = [], meta = {} } = {}) {
     const at = nowIso(clock);
     const channelKind = channel?.kind ?? 'direct';
     const participants = channel?.participants ?? [];
@@ -259,6 +271,22 @@ export function createEngine(options = {}) {
     const narrative = includeNarrative ? store.getNarrative(db, tenant)?.markdown ?? null : null;
     const { items: top, rendered } = renderMemories(annotated, { maxItems: maxItems ?? cfg.maxItems, narrative });
 
+    // 其它会话的「共享记忆」补一段：像"群里最近聊了什么"这种泛问，
+    // 纯相似度会把它们排到私聊记忆之后，模型就"想不起来"了。
+    let renderedFinal = rendered;
+    let sharedRecent = [];
+    if (config.recall?.includeSharedRecent !== false) {
+      sharedRecent = items
+        .filter((i) => i.sensitivity === 'shared' && i.channelId && i.channelId !== channelId && (i.weight ?? 1) >= floor)
+        .sort((a, b) => String(b.at ?? '').localeCompare(String(a.at ?? '')))
+        .slice(0, 3);
+      if (sharedRecent.length > 0) {
+        const block = ['（来自其它会话的近期记忆，可以参考，但不要当成当前对话）',
+          ...sharedRecent.map((i) => '- ' + String(i.text ?? i.gist ?? '').slice(0, 120))].join('\n');
+        renderedFinal = renderedFinal ? renderedFinal + '\n' + block : block;
+      }
+    }
+
     const when = nowIso(clock);
     for (const hit of top) {
       if (hit.kind === 'episodic') store.markEventAccessed(db, hit.id, when);
@@ -267,7 +295,8 @@ export function createEngine(options = {}) {
 
     return {
       items: top,
-      rendered,
+      rendered: renderedFinal,
+      sharedRecent,
       stats: { candidates: items.length, returned: top.length },
     };
   }
@@ -276,7 +305,9 @@ export function createEngine(options = {}) {
    * 巩固（仿慢波睡眠）：事件聚类 → 抽象事实 → 合并/分离 → 衰减 → 关系重算
    * @param {{tenant?: string, now?: number}} [options]
    */
-  async function consolidate({ tenant = config.tenant, now = clock() } = {}) {
+  function consolidateWrapped(...args) { return writeQueue.run(() => consolidateNow(...args)); }
+
+  async function consolidateNow({ tenant = config.tenant, now = clock() } = {}) {
     const floor = Number(config.decay?.floor ?? 0.15);
     const state = store.getTenantState(db, tenant);
     const pending = store.listEventsSince(db, { tenant, since: state.lastConsolidatedAt, limit: 500 });
@@ -437,7 +468,7 @@ export function createEngine(options = {}) {
     schema: schemaInfo(db),
     ingest,
     recall,
-    consolidate,
+    consolidate: consolidateWrapped,
     regenerateNarrative,
     refreshRelationship: (contactId, opts) => refreshRelationship(config.tenant, contactId, opts),
     relationships: (tenant = config.tenant) => store.listRelationships(db, tenant),
