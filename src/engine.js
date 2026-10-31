@@ -147,7 +147,10 @@ export function createEngine(options = {}) {
         flags: coded.flags ?? {},
         config: config.gate,
       });
-      if (!gate.allow) {
+      // 群聊/公共场景默认不记人（隐私优先）。调用方可以显式开启记录
+      // （channel.recordPublic = true），用于「群聊内容也要能被记住」的产品诉求。
+      const recordPublic = channel?.recordPublic === true && channelKind === 'public';
+      if (!gate.allow && !recordPublic) {
         skipped += 1;
         skipReasons.push(gate.reason);
         continue;

@@ -173,6 +173,9 @@ class MnemaSupervisor {
       })
 
       child.once('exit', (code, signal) => {
+        // 只处理"当前子进程"的退出：restart() 里被替换掉的旧子进程退出时，
+        // this.child 已经是新进程，不能再把新进程的状态清掉。
+        if (this.child !== child) return
         const wasStopped = this.stopping || this.disposed
         this.lastExit = { code, signal, at: new Date().toISOString() }
         this.child = null
